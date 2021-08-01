@@ -1,0 +1,502 @@
+---
+title: Lawfirm HR Dashboard
+author: KIM KIWOONG
+date: '2021-08-01'
+slug: lawfirm-hr-dashboard
+categories:
+  - R
+tags:
+  - R Markdown
+output: 
+  flexdashboard::flex_dashboard:
+      theme: bootstrap
+  orientation: columns
+---
+
+<style type="text/css">
+@font-face {
+    font-family: 'IM_Hyemin-Bold';
+    src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2106@1.1/IM_Hyemin-Bold.woff2') format('woff');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'ONE-Mobile-POP';
+    src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2105_2@1.0/ONE-Mobile-POP.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+     font-family: 'S-CoreDream-3Light';
+     src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-3Light.woff') format('woff');
+     font-weight: normal;
+     font-style: normal;
+}
+
+body{
+font-family: 'S-CoreDream-3Light';
+font-size: 11pt;
+}
+
+header{
+font-family: 'ONE-Mobile-POP';
+}
+
+h1,h2,h3,h4,h5,h6{
+font-family: 'ONE-Mobile-POP';
+}
+.navbar {
+font-family: 'ONE-Mobile-POP';
+font-size: 15pt;
+}
+.navbar-brand {
+font-family: 'ONE-Mobile-POP';!important;
+}
+
+</style>
+  
+```{r setup, include=FALSE}
+
+rm(list=ls())
+ipak <- function(pkg){
+  new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
+  if (length(new.pkg))
+    install.packages(new.pkg, dependencies = TRUE)
+  sapply(pkg, require, character.only = TRUE)
+}
+
+pkg <- c("readxl", "data.table", "Ecdat", "lmtest", "AER", "sandwich", "car", "urca", "tseries", "orcutt", "rvest", "httr", "tidyverse", "jsonlite", "writexl", "XML", "xml2", "RSelenium", "glue", "regexplain", "knitr", "kableExtra", "lubridate", "KeyboardSimulator", "flexdashboard", "wooldridge", "DT", "shiny", "rmarkdown", "bslib", "thematic", "showtext", "prettydoc")
+ipak(pkg)
+
+
+
+rD <- rsDriver(port=4783L, chromever="91.0.4472.19")
+remDr <- rD$client
+
+
+## 날짜 및 시간 설정
+now <- Sys.time()
+today.m0 <- now %m-% days(0) %>% format("%Y.%m.%d.")
+
+
+## Naver News Keyword Search
+naver.news.api.search <-function(keyword) {
+  
+searchUrl <- "https://openapi.naver.com/v1/search/news.xml"
+client_id <- "iWzwbpF_85PgJWneDwkK"
+client_secret <- "pIYG8N27h1"
+
+search.word <- keyword
+query <- search.word %>% 
+  enc2utf8() %>% 
+  URLencode()
+
+url <- str_c(searchUrl, "?query=", query, "&display=20")
+
+res <- GET(url, 
+           add_headers("X-Naver-Client-Id"=client_id, 
+                       "X-Naver-Client-Secret"=client_secret))
+doc <- toString(res)
+
+xmlFile <- xmlParse(doc)
+xmlRoot(xmlFile)
+df <- xmlToDataFrame(getNodeSet(xmlFile, "//item"), stringsAsFactors = FALSE)
+  
+}
+
+```
+
+
+
+1. Lawfirm
+=======================================================================
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+### **네이버 뉴스 "로펌(법무법인)"**
+
+
+
+```{r include=FALSE}
+list <- c("로펌", "법무법인")
+Stack <- NULL
+for (keyword in list) {
+  
+  query <- keyword
+  tab <- naver.news.api.search(query)
+  tab <- cbind(query, tab) 
+  tab <- tab %>% select(-originallink, -description)
+  tab <- tab %>% 
+    mutate(pubDate = str_remove(pubDate, " \\d{2}:.+")) %>% 
+    mutate(title = str_replace_all(title, "&quot;", '"'))
+
+  Stack <- rbind(Stack, tab) 
+  
+}
+
+names(Stack) <- c("Search", "Title", "Link", "Date")
+
+df <- Stack %>%
+  mutate(Title = cell_spec(Title, "html", link = Link, color="#FF7F50")) %>% 
+  select(Date, Search, Title)
+df[,1] <- str_remove(df[,1], "[A-z]....")
+
+Sys.setlocale("LC_ALL", "C")
+df[, 1] <- as.Date(df[, 1], format = "%d %b %Y")
+
+Sys.setlocale("LC_ALL", "korean")
+
+df <- df[,-2]
+
+```
+
+```{r fig.showtext=T}
+df %>% 
+  kable(escape=FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(1, width = "10em") %>%
+  column_spec(2, width = "30em")
+```
+
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+### Chart 2
+대한변호사협회 등록 기준
+```{r, include=FALSE}
+lawfirm <- c("김앤장 법률사무소", "법무법인(유한) 태평양", "법무법인(유한) 광장", "법무법인(유한) 세종", "법무법인(유한) 율촌")
+
+stack <- NULL
+
+for (i in lawfirm) {
+  url.korbar <- paste("https://www.koreanbar.or.kr/pages/search/search.asp?parts=&searchtype=officetitle&searchstr=", i)
+  remDr$navigate(url.korbar)
+  
+  txt <- remDr$getPageSource()[[1]]
+
+  res <- read_html(txt)
+  
+
+  title <- i
+  
+  n.attorney <- res %>%
+    html_nodes("#rightW > div.board_listW > table > tbody > tr:nth-child(1) > td:nth-child(1)") %>% 
+    html_text() %>% 
+    str_remove("\n") %>% 
+    str_trim() %>%
+    head(1)
+  
+  date <- today.m0
+  
+  df <- cbind(date, title, n.attorney)
+  
+  stack <- rbind(df, stack)
+  Sys.sleep(2)
+
+}
+
+```
+
+```{r fig.showtext=T}
+
+stack[,1] <- gsub("\\.", "\\-", stack[,1]) %>% 
+  substr(1,10)
+stack[,3] <- as.numeric(stack[,3])
+df <- data.frame(stack)
+
+graph <- ggplot(df, aes(title, n.attorney, fill = n.attorney, label = n.attorney)) +
+  geom_col() +
+  geom_text() +
+  theme(legend.position = "none")
+
+ggsave("graph.png", plot = graph, width = 6, height = 3, dpi = 200)
+include_graphics("C:/Users/kiwoong/OneDrive/2. QAE/DataManagement/HW1/graph.png")
+
+```
+
+### Chart 3
+
+```{r, include=FALSE}
+url.leeko <- "https://www.leeko.com/news/boardList.do?lang=KR&searchMenupart=12" #법무법인 광장  url
+
+remDr$navigate(url.leeko)
+
+txt <- remDr$getPageSource()[[1]]
+
+res <- read_html(txt)
+
+# 엄밀히 하려면 5개가 아니라 더 뽑아야함...
+title <- res %>%
+  html_nodes(".listClass") %>% 
+  html_text() %>% 
+  str_remove("\n") %>% 
+  str_trim() %>% 
+  head(5)
+
+date <- res %>%
+  html_nodes("span") %>% 
+  html_text() %>% 
+  str_remove("\n") %>% 
+  str_trim() %>% 
+  tail(10) %>% 
+  head(5)
+
+link <- paste("https://www.leeko.com/news/boardView.do?lang=KR&pageType=modify&boardNo=", gsub('.+\\(([0-9]+)\\).+?$', '\\1', res %>% html_nodes(".listClass")), "&searchCondition=&searchMenupart=12&pageSize=10&pageNo=1") %>% 
+  head(5)
+
+name <- "광장"
+
+tbl.leeko <- cbind(date, name, title, link) %>%
+  as.data.frame(stringsAsFactors=FALSE)
+
+df.leeko <- tbl.leeko %>%
+  mutate(title.link = cell_spec(title, "html", link = link, color="#FF7F50")) %>%
+  select(date, name, title.link)
+
+# 율촌
+url.yulchon <- "https://www.yulchon.com/ko/search/search-result-press-mentions.do?keyword=%EC%98%81%EC%9E%85"
+
+
+remDr$navigate(url.yulchon)
+
+element <- remDr$findElement(using = "css", "#more_view > button")
+element$clickElement()
+
+txt <- remDr$getPageSource()[[1]]
+
+res <- read_html(txt)
+
+title <- res %>%
+  html_nodes(".ellip") %>% 
+  html_text() %>% 
+  str_remove("\n") %>% 
+  str_trim() %>% 
+  head(5)
+
+
+date <- res %>%
+  html_nodes(".date") %>% 
+  html_text() 
+date <-  gsub(" ","", date ,fixed=T)
+
+
+
+link <- res %>%
+  html_nodes(".post_link") %>% 
+  html_attr("href") %>% 
+  head(5)
+
+name <- "율촌"
+
+tbl.yulchon <- cbind(date, name, title, link) %>%
+  as.data.frame(stringsAsFactors=FALSE)
+
+df.yulchon <- tbl.yulchon %>%
+  mutate(title.link = cell_spec(title, "html", link = link, color="#FF7F50")) %>%
+  select(date, name, title.link)
+
+# 세종
+url.shinkim <- "https://www.shinkim.com/kor/media/sejong/?code=%EC%98%81%EC%9E%85%EC%9D%B8%EC%82%AC&keyword="
+
+
+remDr$navigate(url.shinkim)
+
+txt <- remDr$getPageSource()[[1]]
+
+res <- read_html(txt)
+
+title <- res %>%
+  html_nodes(".text") %>% 
+  html_text() %>% 
+  str_remove("\n") %>% 
+  str_trim() %>% 
+  head(9)
+
+
+title <- title[-c(1:4)]
+
+date <- res %>%
+  html_nodes(".posted") %>% 
+  html_text() %>% 
+  head(5)
+
+link <- res %>%
+  html_nodes(".text") %>% 
+  html_attr("href") %>% 
+  head(9) %>%
+  str_c("https://www.shinkim.com/", .)
+
+link <- link[-c(1:4)]
+
+name <- "세종"
+
+tbl.shinkim <- cbind(date, name, title, link) %>%
+  as.data.frame(stringsAsFactors=FALSE)
+
+df.shinkim <- tbl.shinkim %>%
+  mutate(title.link = cell_spec(title, "html", link = link, color="#FF7F50")) %>%
+  select(date, name, title.link)
+
+df.lawfirm <- rbind(df.leeko, df.yulchon, df.shinkim)
+df.lawfirm <- arrange(df.lawfirm, desc(date))
+names(df.lawfirm) <- c("날짜", "로펌", "영입 기사")
+
+```
+
+```{r fig.showtext=T}
+df.lawfirm %>% 
+  kable(format="html", escape=FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(1, width = "1em", color = "#FF7F50") %>%
+  column_spec(2, width = "1em") %>% 
+  column_spec(3, width = "30em") 
+```
+
+
+
+
+
+2. HR
+=======================================================================
+
+### Chart 1
+
+**고용노동부 공지사항**
+
+```{r, include=FALSE}
+url.moel <- "http://www.moel.go.kr/news/notice/noticeList.do"
+Sys.sleep(2)
+remDr$navigate(url.moel)
+
+txt <- remDr$getPageSource()[[1]]
+
+res <- read_html(txt)
+
+
+title <- res %>%
+  html_nodes(".b_tit") %>% 
+  html_text()
+
+title <- str_remove_all(title, "\\r|\\n|\\t|\\r\\n|\\[..\\]")
+title <- trimws(title, which = "both")
+title
+date <- res %>% 
+  html_nodes("td") %>% 
+  html_text()
+
+Sys.setlocale("LC_ALL", "C")
+date <- res %>%
+  html_table() %>% 
+  .[[1]]
+date <- date[5]
+Sys.setlocale("LC_ALL", "korean")
+date
+
+link <- res %>%
+  html_nodes(".b_tit") %>% 
+  html_attr("href") %>%
+  str_c("http://www.moel.go.kr/", .)
+
+tbl.moel <- cbind(date, title, link) %>%
+  as.data.frame(stringsAsFactors=FALSE)
+
+names(tbl.moel) <- c("date", "title", "link")
+
+tbl.moel
+
+df.moel <- tbl.moel %>%
+  mutate(title.link = cell_spec(title, "html", link = link, color="#062872")) %>%
+  select(title.link, date)
+df.moel
+names(df.moel) <- c("title", "date")
+```
+
+```{r fig.showtext=T}
+
+df.moel %>%
+  kable(format="html", escape=FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(1, width = "10em") %>%
+  column_spec(2, width = "5em") 
+```
+
+
+### Chart 2
+
+**고용노동부 보도자료**
+```{r, include=FALSE}
+url.moel2 <- "http://www.moel.go.kr/news/enews/report/enewsList.do"
+
+remDr$navigate(url.moel2)
+
+txt <- remDr$getPageSource()[[1]]
+
+res <- read_html(txt)
+
+
+title <- res %>%
+  html_nodes(".b_tit") %>% 
+  html_text()
+
+title <- str_remove_all(title, "\\r|\\n|\\t|\\r\\n|\\[..\\]")
+title <- trimws(title, which = "both")
+title
+
+date <- res %>% 
+  html_nodes("td") %>% 
+  html_text()
+
+Sys.setlocale("LC_ALL", "C")
+date <- res %>%
+  html_table() %>% 
+  .[[1]]
+date
+date <- date[4]
+Sys.setlocale("LC_ALL", "korean")
+
+
+link <- res %>%
+  html_nodes(".b_tit") %>% 
+  html_attr("href") %>% 
+  str_extract("seq=[0-9]+[0-9]") %>% 
+  str_c("http://www.moel.go.kr/news/enews/report/enewsView.do?news_", .)
+
+link
+
+tbl.moel2 <- cbind(date, title, link) %>%
+  as.data.frame(stringsAsFactors=FALSE)
+
+names(tbl.moel2) <- c("date", "title", "link")
+
+tbl.moel2
+
+df.moel2 <- tbl.moel2 %>%
+  mutate(title.link = cell_spec(title, "html", link = link, color="#062872")) %>%
+  select(title.link, date)
+
+names(df.moel2) <- c("title", "date")
+
+
+
+```
+
+```{r fig.showtext=T}
+
+df.moel2 %>%
+  kable(format="html", escape=FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(1, width = "10em") %>%
+  column_spec(2, width = "5em") 
+```
+
+
+
+```{r, include=FALSE}
+remDr$close()
+rD$server$stop()
+system("taskkill /im java.exe /F")
+```
+
+
+3. 연락처{data-navmenu="More"}
+=======================================
