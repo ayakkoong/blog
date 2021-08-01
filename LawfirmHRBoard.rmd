@@ -129,7 +129,7 @@ for (keyword in list) {
 names(Stack) <- c("Search", "Title", "Link", "Date")
 
 df <- Stack %>%
-  mutate(Title = cell_spec(Title, "html", link = Link, color="#FF7F50")) %>% 
+  mutate(Title = cell_spec(Title, "html", link = Link)) %>% 
   select(Date, Search, Title)
 df[,1] <- str_remove(df[,1], "[A-z]....")
 
@@ -242,7 +242,7 @@ tbl.leeko <- cbind(date, name, title, link) %>%
   as.data.frame(stringsAsFactors=FALSE)
 
 df.leeko <- tbl.leeko %>%
-  mutate(title.link = cell_spec(title, "html", link = link, color="#FF7F50")) %>%
+  mutate(title.link = cell_spec(title, "html", link = link)) %>%
   select(date, name, title.link)
 
 # 율촌
@@ -284,7 +284,7 @@ tbl.yulchon <- cbind(date, name, title, link) %>%
   as.data.frame(stringsAsFactors=FALSE)
 
 df.yulchon <- tbl.yulchon %>%
-  mutate(title.link = cell_spec(title, "html", link = link, color="#FF7F50")) %>%
+  mutate(title.link = cell_spec(title, "html", link = link")) %>%
   select(date, name, title.link)
 
 # 세종
@@ -326,7 +326,7 @@ tbl.shinkim <- cbind(date, name, title, link) %>%
   as.data.frame(stringsAsFactors=FALSE)
 
 df.shinkim <- tbl.shinkim %>%
-  mutate(title.link = cell_spec(title, "html", link = link, color="#FF7F50")) %>%
+  mutate(title.link = cell_spec(title, "html", link = link)) %>%
   select(date, name, title.link)
 
 df.lawfirm <- rbind(df.leeko, df.yulchon, df.shinkim)
@@ -339,7 +339,7 @@ names(df.lawfirm) <- c("날짜", "로펌", "영입 기사")
 df.lawfirm %>% 
   kable(format="html", escape=FALSE) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
-  column_spec(1, width = "1em", color = "#FF7F50") %>%
+  column_spec(1, width = "1em") %>%
   column_spec(2, width = "1em") %>% 
   column_spec(3, width = "30em") 
 ```
@@ -397,7 +397,7 @@ names(tbl.moel) <- c("date", "title", "link")
 tbl.moel
 
 df.moel <- tbl.moel %>%
-  mutate(title.link = cell_spec(title, "html", link = link, color="#062872")) %>%
+  mutate(title.link = cell_spec(title, "html", link = link")) %>%
   select(title.link, date)
 df.moel
 names(df.moel) <- c("title", "date")
